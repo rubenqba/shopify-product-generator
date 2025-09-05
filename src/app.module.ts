@@ -6,6 +6,8 @@ import { WeatherModule } from './weather/weather.module';
 import configuration from './config/configuration';
 import { McpModule } from '@rekog/mcp-nest';
 import { StoreModule } from './store/store.module';
+import { PromptLoaderService } from './common/prompt-loader.service';
+import { CommonModule } from './common/common.module';
 
 @Module({
   imports: [
@@ -20,8 +22,10 @@ import { StoreModule } from './store/store.module';
       version: '1.0.0',
     }),
     StoreModule,
+    CommonModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, PromptLoaderService],
+  exports: [PromptLoaderService],
 })
 export class AppModule {}

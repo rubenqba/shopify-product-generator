@@ -143,7 +143,7 @@ export const UnifiedProductSchema = BaseProductSchema.extend({
 // TypeScript infiere automáticamente el tipo correcto
 export type UnifiedProduct = z.infer<typeof UnifiedProductSchema>;
 
-const productSortKeys = ['updated', 'price', 'name'] as const;
+const productSortKeys = ['updated', 'name'] as const;
 export const ProductSearchParamsSchema = queryOf(
   z
     .object({
@@ -165,3 +165,85 @@ export type HealthStatus = {
   lastCheck: Date;
   message?: string;
 };
+
+// creacion de productos
+export const InventoryQuantitySchema = z.object({
+  locationId: z.string().describe('ID de la ubicación para el inventario.'),
+  name: z.enum(['available', 'on_hand']),
+  quantity: z.number().int().min(0),
+});
+
+export const VariantInventorySchema = z.object({
+  tracked: z.boolean().default(true),
+  cost: z.number().optional(),
+  requiresShipping: z.boolean().default(true),
+});
+
+export const ProductOptionSchema = z.object({
+  name: z.string(),
+  values: z.array(
+    z.object({
+      name: z.string(),
+    }),
+  ),
+});
+
+export const ProductOptionValueSchema = z.object({
+  optionName: z.string(),
+  name: z.string(),
+});
+
+export const ProductVariantSchema = z
+  .object({
+    optionValues: ProductOptionValueSchema.array(),
+    price: z.number().min(0),
+    compareAtPrice: z.number().min(0).optional(),
+    inventoryItem: VariantInventorySchema.optional(),
+    inventoryQuantities: z.array(InventoryQuantitySchema).optional(),
+    sku: z.string().trim().max(255).optional(),
+  })
+  .refine((v) => v.compareAtPrice === undefined || v.compareAtPrice > v.price, {
+    message: 'compareAtPrice debe ser mayor que price',
+    path: ['compareAtPrice'],
+  });
+
+export const CreateProductSchema = z
+  .object({
+    title: z.string(),
+    descriptionHtml: z.string().optional(),
+    productType: z.string().optional(),
+    vendor: z.string().optional(),
+    productOptions: z.array(ProductOptionSchema).max(3).default([]),
+    variants: z.array(ProductVariantSchema).max(100).default([]),
+  })
+  .refine(
+    (data) => {
+      if (data.variants.length > 0 && data.productOptions.length == 0) {
+        return false;
+      }
+      const optionMap = Object.fromEntries(
+        data.productOptions.map((opt) => [opt.name, new Set(opt.values.map((v) => v.name))]),
+      );
+
+      for (const variant of data.variants) {
+        for (const ov of variant.optionValues) {
+          if (!optionMap[ov.optionName]) return false;
+          if (!optionMap[ov.optionName].has(ov.name)) return false;
+        }
+      }
+      return true;
+    },
+    {
+      message: 'Las opciones de los productos y las variantes no son consistentes',
+      path: ['variants'],
+    },
+  );
+export type CreateProduct = z.infer<typeof CreateProductSchema>;
+
+export const LocationSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  isActive: z.boolean().default(false),
+  fulfillOnlineOrders: z.boolean().default(false),
+});
+export type StoreLocation = z.infer<typeof LocationSchema>;

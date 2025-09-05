@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ShopifyService } from './shopify.service';
+import { ProductSearchParams } from './store.dto';
 
 @Injectable()
 export class StoreService {
-
   constructor(private readonly shopify: ShopifyService) {}
 
   async checkHealth() {
@@ -13,7 +13,9 @@ export class StoreService {
   /**
    * Search for products in the store
    */
-  async search() {}
+  async search(params: ProductSearchParams) {
+    return this.shopify.search(params);
+  }
 
   /**
    * Get details of a specific product by id
