@@ -491,12 +491,15 @@ export class ShopifyService {
     };
 
     const synchronous = dto.variants.length <= 10;
-    const { data, errors } = await this.graphqlRequest<ProductCreateResponse>(Queries.CREATE_PRODUCT_MUTATION, {
-      variables: {
-        input: dto,
-        synchronous,
+    const { data, errors } = await this.graphqlRequest<{ productSet: ProductCreateResponse }>(
+      Queries.CREATE_PRODUCT_MUTATION,
+      {
+        variables: {
+          input: dto,
+          synchronous,
+        },
       },
-    });
+    );
 
     if (errors) {
       throw new Error(`Failed to create product: ${errors.message}`);
@@ -506,18 +509,20 @@ export class ShopifyService {
       throw new Error(`Failed to create product: No response data`);
     }
 
-    if (data.userErrors && data.userErrors.length > 0) {
-      throw new Error(`Failed to create product: ${data.userErrors.map((e) => e.message).join(', ')}`);
+    const { product, productSetOperation, userErrors } = data.productSet;
+
+    if (userErrors && userErrors.length > 0) {
+      throw new Error(`Failed to create product: ${userErrors.map((e) => e.message).join(', ')}`);
     }
 
-    if (synchronous && data.product) {
-      return this.simplifyGid(data.product.id);
+    if (synchronous && product) {
+      return this.simplifyGid(product.id);
     }
 
-    if (!synchronous && data.productSetOperation) {
-      return data.productSetOperation.status === 'COMPLETE'
-        ? data.productSetOperation.product.id
-        : await this.waitForProductOperation(data.productSetOperation.id);
+    if (!synchronous && productSetOperation) {
+      return productSetOperation.status === 'COMPLETE'
+        ? productSetOperation.product.id
+        : await this.waitForProductOperation(productSetOperation.id);
     }
 
     throw new Error('Failed to create product: No debió llegas aqui');

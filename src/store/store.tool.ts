@@ -278,12 +278,10 @@ export class ShopifyStoreTool {
   @Prompt({
     name: 'shopify-create-product-prompt',
     description: 'Genera un payload JSON válido para crear un producto a partir de una categoría y un idioma.',
-    parameters: z.object({
-      category: z.string().describe('La categoría del producto a crear'),
-    }),
   })
   async createProductPrompt(): Promise<GetPromptResult> {
-    const prompt = await this.promptLoader.getPrompt('create-product.md');
+    const prompt = (await this.promptLoader.getPrompt('create-product.md')).replace(/{language}/g, 'spanish');
+
     return {
       description:
         'Genera un payload JSON válido para crear un producto a partir de una categoría (zapatos, ropa, electrónicos, computadoras, etc.). Consulta locations con las tools disponibles.',
