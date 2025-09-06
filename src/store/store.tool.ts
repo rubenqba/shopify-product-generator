@@ -1,11 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prompt, Resource, ResourceTemplate, Tool } from '@rekog/mcp-nest';
 import { type CallToolResult, type GetPromptResult } from '@modelcontextprotocol/sdk/types.js';
-import { type CreateProduct, CreateProductSchema, ProductSearchParams } from './store.dto';
+import { type CreateProduct, CreateProductSchema, FileSetSchema, ProductSearchParams } from './store.dto';
 import { ShopifyService } from './shopify.service';
 import { z } from 'zod';
 import zodToJsonSchema from 'zod-to-json-schema';
 import { PromptLoaderService } from 'src/common/prompt-loader.service';
+import { UnsplashService } from 'src/unsplash/unsplash.service';
+import { UnsplashImageMinimal } from 'src/unsplash/unsplash.dto';
 
 @Injectable()
 export class ShopifyStoreTool {
@@ -14,6 +16,7 @@ export class ShopifyStoreTool {
   constructor(
     private readonly store: ShopifyService,
     private readonly promptLoader: PromptLoaderService,
+    private readonly unsplash: UnsplashService,
   ) {}
 
   @Tool({
@@ -34,7 +37,7 @@ export class ShopifyStoreTool {
     description: 'Get the health status of the Shopify store',
     mimeType: 'application/json',
   })
-  async getCurrentSchema({ uri }: { uri: string }) {
+  async checkStoreHealthResource({ uri }: { uri: string }) {
     return {
       contents: [
         {
@@ -175,13 +178,6 @@ export class ShopifyStoreTool {
             type: 'text',
             text: JSON.stringify(product),
           },
-          {
-            type: 'resource_link',
-            name: `Product: ${product.title}`,
-            uri: `shopify://store/product/${product.id}`,
-            mimeType: 'application/json',
-            title: product.title,
-          },
         ],
       };
     } catch (error) {
@@ -213,13 +209,6 @@ export class ShopifyStoreTool {
             type: 'text',
             text: JSON.stringify(locations),
           },
-          {
-            type: 'resource_link',
-            name: `Store locations`,
-            uri: `shopify://store/locations`,
-            mimeType: 'application/json',
-            title: `Store locations`,
-          },
         ],
       };
     } catch (error) {
@@ -235,6 +224,24 @@ export class ShopifyStoreTool {
     }
   }
 
+  @Resource({
+    uri: 'shopify://store/locations',
+    name: 'Get Store Locations',
+    description: 'Get the list of locations for the Shopify store',
+    mimeType: 'application/json',
+  })
+  async checkStoreLocationsResource({ uri }: { uri: string }) {
+    return {
+      contents: [
+        {
+          uri: uri,
+          mimeType: 'application/json',
+          text: JSON.stringify(await this.store.locations()),
+        },
+      ],
+    };
+  }
+
   @Tool({
     name: 'shopify-product-create',
     description: 'Create a new product in the Shopify store',
@@ -245,20 +252,14 @@ export class ShopifyStoreTool {
   })
   async createProductTool(data: CreateProduct): Promise<CallToolResult> {
     try {
+      this.log.debug('Creating product:', JSON.stringify(data));
       const id = await this.store.create(data);
 
       return {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(data),
-          },
-          {
-            type: 'resource_link',
-            name: `New product: ${id}`,
-            uri: `shopify://store/product/${id}`,
-            mimeType: 'application/json',
-            title: `New product: ${id}`,
+            text: JSON.stringify(id),
           },
         ],
       };
@@ -302,5 +303,121 @@ export class ShopifyStoreTool {
         },
       ],
     };
+  }
+
+  @Tool({
+    name: 'shopify-generate-product-images',
+    description: 'Generate product images using Unsplash API',
+    parameters: z.object({
+      query: z.string().min(2).max(100),
+      count: z.number().min(1).max(10).optional(),
+    }),
+  })
+  async generateProductImages({ query, count = 3 }: { query: string; count?: number }): Promise<CallToolResult> {
+    try {
+      const sources = await this.unsplash.searchPhotos(query, { per_page: count });
+      const images = await Promise.all(sources.map((img) => this.unsplashToFileSet(img)));
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(images),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ error: (error as Error).message }),
+          },
+        ],
+      };
+    }
+  }
+
+  // Construye una URL con lado largo ≤ 2048 y ajustes recomendados
+  private toMaxSide2048(url: string) {
+    const u = new URL(url);
+    // forzamos JPG sRGB con compresión razonable
+    u.searchParams.set('w', '2048');
+    u.searchParams.set('q', '85');
+    u.searchParams.set('fm', 'jpg');
+    u.searchParams.set('cs', 'srgb');
+    return u.toString();
+  }
+
+  /**
+   * Mapea el objeto de Unsplash a tu FileSetSchema (contentType: 'IMAGE')
+   * - Usa urls.raw para poder fijar w=2048
+   * - filename basado en slug o id
+   * - alt de alt_description/description
+   * - Conserva datos útiles por si registras descarga/atribución en otra parte
+   */
+  private async unsplashToFileSet(img: UnsplashImageMinimal) {
+    const originalSource = await this.unsplash.getDownloadUrl(img.id).then((url) => this.toMaxSide2048(url));
+    const alt = (img.alt_description ?? undefined) || (img.description ?? undefined);
+
+    return {
+      originalSource,
+      alt,
+      contentType: 'IMAGE' as const,
+      // Si quieres, guarda aparte:
+      _meta: {
+        image_id: img.id,
+        authorUsername: img.user.username,
+        authorName: img.user.name,
+        blurHash: img.blur_hash,
+        color: img.color,
+        mimeType: 'image/jpeg',
+      },
+    };
+  }
+
+  @Prompt({
+    name: 'shopify-generate-product-images-prompt',
+    description:
+      'This prompt helps LLMs create queries and structured image objects for the `shopify-generate-product-images` tool. Output is schema-compliant and ready for use with other MCP Shopify product tools.',
+  })
+  async generateProductImagesPrompt(): Promise<GetPromptResult> {
+    try {
+      const prompt = await this.promptLoader.getPrompt('generate-images.md');
+
+      return {
+        description:
+          'This prompt assists LLMs and agents in generating relevant product image queries and structured image data objects for mock Shopify products, using the MCP tool shopify-generate-product-images. It guides the model to create detailed English-language queries based on the product category or description, specify the desired number of images, and return image object arrays compliant with the required schema. These images can later be integrated with other MCP tools such as product creation flows, enabling automated and contextually appropriate image provisioning for Shopify mock products.',
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `${prompt}`,
+            },
+          },
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `${JSON.stringify(zodToJsonSchema(FileSetSchema.array()))}`,
+            },
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        isError: true,
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: JSON.stringify({ error: (error as Error).message }),
+            },
+          },
+        ],
+      };
+    }
   }
 }

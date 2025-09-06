@@ -1,6 +1,4 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import { WeatherModule } from './weather/weather.module';
 import configuration from './config/configuration';
@@ -8,6 +6,10 @@ import { McpModule } from '@rekog/mcp-nest';
 import { StoreModule } from './store/store.module';
 import { PromptLoaderService } from './common/prompt-loader.service';
 import { CommonModule } from './common/common.module';
+import { UnsplashModule } from './unsplash/unsplash.module';
+import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
+import { ZodSerializerInterceptor, ZodValidationPipe } from 'nestjs-zod';
+import { HttpExceptionFilter } from './common/zod-exception.filter';
 
 @Module({
   imports: [
@@ -23,9 +25,24 @@ import { CommonModule } from './common/common.module';
     }),
     StoreModule,
     CommonModule,
+    UnsplashModule,
   ],
-  controllers: [AppController],
-  providers: [AppService, PromptLoaderService],
+  controllers: [],
+  providers: [
+    PromptLoaderService,
+    {
+      provide: APP_PIPE,
+      useClass: ZodValidationPipe,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ZodSerializerInterceptor,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: HttpExceptionFilter,
+    },
+  ],
   exports: [PromptLoaderService],
 })
 export class AppModule {}

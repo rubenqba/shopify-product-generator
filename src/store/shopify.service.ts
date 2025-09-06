@@ -1,5 +1,5 @@
 // shopify.service.ts
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { shopifyApi, LATEST_API_VERSION, Session } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
@@ -491,41 +491,46 @@ export class ShopifyService {
     };
 
     const synchronous = dto.variants.length <= 10;
-    const { data, errors } = await this.graphqlRequest<{ productSet: ProductCreateResponse }>(
-      Queries.CREATE_PRODUCT_MUTATION,
-      {
-        variables: {
-          input: dto,
-          synchronous,
+    try {
+      const { data, errors } = await this.graphqlRequest<{ productSet: ProductCreateResponse }>(
+        Queries.CREATE_PRODUCT_MUTATION,
+        {
+          variables: {
+            input: dto,
+            synchronous,
+          },
         },
-      },
-    );
+      );
 
-    if (errors) {
-      throw new Error(`Failed to create product: ${errors.message}`);
+      if (errors) {
+        throw new Error(`Failed to create product: ${errors.message}`);
+      }
+
+      if (!data) {
+        throw new Error(`Failed to create product: No response data`);
+      }
+
+      const { product, productSetOperation, userErrors } = data.productSet;
+
+      if (userErrors && userErrors.length > 0) {
+        throw new Error(`Failed to create product: ${userErrors.map((e) => e.message).join(', ')}`);
+      }
+
+      if (synchronous && product) {
+        return this.simplifyGid(product.id);
+      }
+
+      if (!synchronous && productSetOperation) {
+        return productSetOperation.status === 'COMPLETE'
+          ? productSetOperation.product.id
+          : await this.waitForProductOperation(productSetOperation.id);
+      }
+
+      throw new Error('Failed to create product: No debió llegas aqui');
+    } catch (error) {
+      this.log.error('Error creating product:', error);
+      throw new BadRequestException('Error creating product', { description: (error as Error).message });
     }
-
-    if (!data) {
-      throw new Error(`Failed to create product: No response data`);
-    }
-
-    const { product, productSetOperation, userErrors } = data.productSet;
-
-    if (userErrors && userErrors.length > 0) {
-      throw new Error(`Failed to create product: ${userErrors.map((e) => e.message).join(', ')}`);
-    }
-
-    if (synchronous && product) {
-      return this.simplifyGid(product.id);
-    }
-
-    if (!synchronous && productSetOperation) {
-      return productSetOperation.status === 'COMPLETE'
-        ? productSetOperation.product.id
-        : await this.waitForProductOperation(productSetOperation.id);
-    }
-
-    throw new Error('Failed to create product: No debió llegas aqui');
   }
 
   // Helper: hace polling hasta COMPLETE (o timeout)

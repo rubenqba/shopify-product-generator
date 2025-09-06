@@ -167,8 +167,21 @@ export type HealthStatus = {
 };
 
 // creacion de productos
+const toGid = (resource: 'Location' | 'Product' | 'Variant' | 'Collection' | 'File') =>
+  z
+    .union([z.string(), z.number()])
+    .transform((v) => (typeof v === 'number' ? String(v) : String(v).trim()))
+    .transform((v) => (v.startsWith('gid://shopify/') ? v : `gid://shopify/${resource}/${v}`))
+    .refine(
+      (v) => {
+        // valida que terminó con un número (ajusta si tus IDs no siempre son numéricos)
+        return /^gid:\/\/shopify\/[A-Za-z]+\/\d+$/.test(v);
+      },
+      { message: `ID ${resource} inválido. Usa un número o un GID válido.` },
+    );
+
 export const InventoryQuantitySchema = z.object({
-  locationId: z.string().describe('ID de la ubicación para el inventario.'),
+  locationId: toGid('Location').describe('ID de la ubicación para el inventario.'),
   name: z.enum(['available', 'on_hand']),
   quantity: z.number().int().min(0),
 });
@@ -193,6 +206,19 @@ export const ProductOptionValueSchema = z.object({
   name: z.string(),
 });
 
+export const FileContentTypeSchema = z.enum(['IMAGE', 'VIDEO', 'EXTERNAL_VIDEO', 'MODEL_3D', 'FILE']); // Admin GQL FileContentType
+
+export const FileSetSchema = z
+  .object({
+    id: toGid('File').optional().describe('ID del archivo en Shopify si se va a reutilizar.'),
+    originalSource: z.string().url().optional().describe('URL externa o staged upload'),
+    alt: z.string().optional().describe('Texto alternativo para el archivo.'),
+    contentType: FileContentTypeSchema.default('IMAGE').describe('Tipo de contenido del archivo.'),
+  })
+  .refine((f) => !!f.id || !!f.originalSource, {
+    message: 'Debes proveer "id" o "originalSource" en cada file.',
+  });
+
 export const ProductVariantSchema = z
   .object({
     optionValues: ProductOptionValueSchema.array(),
@@ -201,6 +227,8 @@ export const ProductVariantSchema = z
     inventoryItem: VariantInventorySchema.optional(),
     inventoryQuantities: z.array(InventoryQuantitySchema).optional(),
     sku: z.string().trim().max(255).optional(),
+    // 👇 archivo (imagen/video/3D) asociado a la variante (debe existir en product.files)
+    file: FileSetSchema.optional(),
   })
   .refine((v) => v.compareAtPrice === undefined || v.compareAtPrice > v.price, {
     message: 'compareAtPrice debe ser mayor que price',
@@ -215,6 +243,8 @@ export const CreateProductSchema = z
     vendor: z.string().optional(),
     productOptions: z.array(ProductOptionSchema).max(3).default([]),
     variants: z.array(ProductVariantSchema).max(100).default([]),
+    // 👇 archivos a nivel producto (deben incluir cualquier file usado por variantes)
+    files: z.array(FileSetSchema).default([]),
   })
   .refine(
     (data) => {
@@ -237,7 +267,62 @@ export const CreateProductSchema = z
       message: 'Las opciones de los productos y las variantes no son consistentes',
       path: ['variants'],
     },
-  );
+  )
+  // ➕ añadimos superRefine para checks granulares extra:
+  .superRefine((data, ctx) => {
+    // 1) El file de cada variante debe existir también en product.files
+    const ids = new Set(data.files.map((f) => f.id).filter(Boolean) as string[]);
+    const srcs = new Set(data.files.map((f) => f.originalSource).filter(Boolean) as string[]);
+    data.variants.forEach((v, i) => {
+      if (!v.file) return;
+      const ok = (v.file.id && ids.has(v.file.id)) || (v.file.originalSource && srcs.has(v.file.originalSource));
+      if (!ok) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['variants', i, 'file'],
+          message: 'La variante referencia un file que no está listado en input.files (requisito de Shopify).',
+        });
+      }
+    });
+
+    // 2) Si hay inventoryQuantities ⇒ inventoryItem.tracked debe ser true
+    data.variants.forEach((v, i) => {
+      if (v.inventoryQuantities?.length) {
+        if (!v.inventoryItem?.tracked) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['variants', i, 'inventoryItem', 'tracked'],
+            message: 'Para enviar inventoryQuantities debes activar inventoryItem.tracked.',
+          });
+        }
+        // 3) (Opcional) validar formato GID del locationId
+        v.inventoryQuantities.forEach((iq, j) => {
+          if (!/^gid:\/\/shopify\/Location\/\d+$/.test(iq.locationId)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['variants', i, 'inventoryQuantities', j, 'locationId'],
+              message: 'locationId debe ser un GID válido: gid://shopify/Location/<número>.',
+            });
+          }
+        });
+      }
+    });
+
+    // 4) (Opcional) evitar variantes duplicadas (misma combinación de optionValues)
+    const seen = new Set<string>();
+    data.variants.forEach((v, i) => {
+      const key = JSON.stringify([...v.optionValues].sort((a, b) => a.optionName.localeCompare(b.optionName)));
+      if (seen.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['variants', i, 'optionValues'],
+          message: 'Variantes duplicadas: misma combinación de opciones.',
+        });
+      } else {
+        seen.add(key);
+      }
+    });
+  });
 export type CreateProduct = z.infer<typeof CreateProductSchema>;
 
 export const LocationSchema = z.object({
