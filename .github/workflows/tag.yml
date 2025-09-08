@@ -1,0 +1,56 @@
+# create a github action to create a tag using `package.json` version
+# https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on
+
+name: Create new tag
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    permissions:
+      contents: write
+      pull-requests: write
+    name: Create Tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Use Node.js v22.x
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - run: pnpm i --frozen-lockfile
+      - name: Create new tag
+        run: pnpm version patch -m "create new release %s" --tag-version-prefix='v'
+      - name: Update package.json to next development version
+        run: pnpm version prerelease --no-git-tag-version
+      - name: Add changes to repository
+        run: |
+          git add package.json pnpm-lock.yaml && git commit -m "[skip ci] Bump version to next development version"
+
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          force: true # Necessary to update the tag in remote
+          tags: true # Specifies that tags should also be pushed
+          branch: ${{ github.ref }}
