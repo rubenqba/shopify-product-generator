@@ -14,8 +14,14 @@ services:
       dockerfile: docker/Dockerfile
     env_file:
       - .env.local
+    environment:
+      - NODE_ENV=development
     ports:
       - 5080:5080
+    develop:
+      watch:
+        - path: ./src
+          action: rebuild
 
 # The commented out section below is an example of how to define a PostgreSQL
 # database that your application can use. `depends_on` tells Docker Compose to

@@ -1,7 +1,7 @@
 // shopify.service.ts
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { shopifyApi, LATEST_API_VERSION, Session } from '@shopify/shopify-api';
+import { shopifyApi, LATEST_API_VERSION, Session, LogSeverity } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
 import {
   CreateProduct,
@@ -98,6 +98,9 @@ export class ShopifyService {
       apiSecretKey: this.config.getOrThrow<string>('shopify.secret'),
       hostName: this.config.getOrThrow<string>('shopify.host'),
       isEmbeddedApp: false,
+      logger: {
+        level: this.config.get('NODE_ENV', 'development') === 'production' ? LogSeverity.Error : LogSeverity.Debug,
+      },
     });
 
     this.log.log('Shopify API initialized');
