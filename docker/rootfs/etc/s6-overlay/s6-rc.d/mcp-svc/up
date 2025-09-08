@@ -1,0 +1,7 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+# capturar los parametros CMD y escribirlos en un archivo
+if [ $# -gt 0 ]; then
+    echo "$@" > /var/run/s6/container_environment/CMDARGS
+fi

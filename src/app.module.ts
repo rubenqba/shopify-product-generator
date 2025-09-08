@@ -9,6 +9,7 @@ import { UnsplashModule } from './unsplash/unsplash.module';
 import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ZodSerializerInterceptor, ZodValidationPipe } from 'nestjs-zod';
 import { HttpExceptionFilter } from './common/zod-exception.filter';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { HttpExceptionFilter } from './common/zod-exception.filter';
     StoreModule,
     CommonModule,
     UnsplashModule,
+    HealthModule,
   ],
   controllers: [],
   providers: [

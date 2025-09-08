@@ -1,0 +1,4 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+
+exec s6-notifyoncheck -d -s 20000 -n 5 -w 10000 -t 5000 -T 120000 -c './data/healthcheck.sh' s6-setuidgid ${USER:-node} node /usr/src/app/dist/main

@@ -26,6 +26,7 @@
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/terminus": "^11.0.0",
     "@rekog/mcp-nest": "^1.8.2",
     "@shopify/shopify-api": "^11.14.1",
     "axios": "^1.11.0",

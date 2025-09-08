@@ -10,5 +10,6 @@ import { StoreController } from './store.controller';
   imports: [CommonModule, UnsplashModule],
   providers: [ShopifyService, StoreService, ShopifyStoreTool],
   controllers: [StoreController],
+  exports: [ShopifyService],
 })
 export class StoreModule {}
