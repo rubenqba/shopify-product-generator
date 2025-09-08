@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { WeatherModule } from './weather/weather.module';
 import configuration from './config/configuration';
 import { McpModule } from '@rekog/mcp-nest';
 import { StoreModule } from './store/store.module';
@@ -18,9 +17,8 @@ import { HttpExceptionFilter } from './common/zod-exception.filter';
       load: [configuration],
       isGlobal: true,
     }),
-    WeatherModule,
     McpModule.forRoot({
-      name: 'my-shopify-service',
+      name: 'shopify-product-generator',
       version: '1.0.0',
     }),
     StoreModule,
