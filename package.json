@@ -1,6 +1,6 @@
 {
   "name": "shopify-product-generator",
-  "version": "1.0.6-0",
+  "version": "1.0.6",
   "description": "Shopify mock product generator (MCP server)",
   "author": "Ruben Bresler <111847+rubenqba@users.noreply.github.com>",
   "private": true,
