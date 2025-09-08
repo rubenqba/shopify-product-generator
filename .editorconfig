@@ -1,0 +1,13 @@
+
+root = true
+
+[{src,scripts}/**.{ts,json,js}]
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+indent_style = space
+indent_size = 2
+#max_line_length = 120
+keep_blank_lines_between_declarations = 1
+quote_style = single_quoted
+extra_spaces = remove_all
